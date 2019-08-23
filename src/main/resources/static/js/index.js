@@ -1,9 +1,15 @@
 
 
 const TYPE_COMMAND_ROOM_ENTER = "enterRoom";
-const TYPE_DIALOGUE = "dialogue";
 const TYPE_COMMAND_ROOM_LIST = "roomList";
-const TYPE_COMMAND_REMOTER_READY = "remoteReady";
+const TYPE_COMMAND_DIALOGUE = "dialogue";
+const TYPE_COMMAND_READY = "ready";
+const TYPE_COMMAND_OFFER = "offer";
+const TYPE_COMMAND_ANSWER = "answer";
+const TYPE_COMMAND_CANDIDATE = "candidate";
+
+
+
 
 let iceServers={
     "iceServers":[
@@ -21,8 +27,8 @@ const streamConstraints = {
     audio: true
 };
 
-let localStream;
-let remoteStream;
+let localMediaStream;
+let remoteMediaStream;
 
 let rtcPeerConnection;
 
@@ -60,7 +66,7 @@ window.onload = ()=>{
                 log("websocket连接成功")
             }
             websocket.onopen = () => {
-                websocket.send(JSON.stringify({command:"roomList"}))
+                websocket.send(JSON.stringify({command:TYPE_COMMAND_ROOM_LIST}))
             };
             websocket.onclose = () => {
                 log("Connection closed.");
@@ -78,14 +84,13 @@ window.onload = ()=>{
     document.getElementById("enterRoom").onclick = () =>{
         userId = document.getElementById("userId").value;
         roomId = document.getElementById("roomId").value;
-        enterRoom(roomId);
-        websocket.send(JSON.stringify({command: "roomList"}));
+        websocket.send(JSON.stringify({command:TYPE_COMMAND_ROOM_ENTER,userId:userId,roomId : roomId}));
+        websocket.send(JSON.stringify({command: TYPE_COMMAND_ROOM_LIST}));
     };
 
     document.getElementById("sendMessage").onclick = () =>{
         let textMessage = document.getElementById("textMessage").value;
-        websocket.send(JSON.stringify({command:"dialogue",userId:userId,roomId : roomId, message: textMessage}));
-
+        websocket.send(JSON.stringify({command:TYPE_COMMAND_DIALOGUE,userId:userId,roomId : roomId, message: textMessage}));
     };
 
 
@@ -93,24 +98,28 @@ window.onload = ()=>{
 };
 
 const handleMessage = (event) => {
+    console.log(event);
     log(event.data);
     let message = JSON.parse(event.data);
     switch (message.command) {
         case TYPE_COMMAND_ROOM_ENTER:
-            if (message.message === "joined"){
+            if (message.message === "joined") {
                 log("加入房间：" + message.roomId + "成功");
                 roomId = message.roomId;
                 openLocalMedia()
-                    .then(()=>{
-                        websocket.send(JSON.stringify({command:"remoteReady",userId:userId,roomId : roomId}));
+                    .then(() => {
+                        log("打开本地音视频设备成功");
+                        websocket.send(JSON.stringify({command: TYPE_COMMAND_READY, userId: userId, roomId: roomId}));
                     })
-                    .catch(()=>{
+                    .catch(() => {
                         log("打开本地音视频设备失败");
                     })
-            }else {
+            } else {
                 log("创建房间：" + message.roomId + "成功");
                 caller = true;
-                openLocalMedia();
+                openLocalMedia()
+                    .then(() => log("打开本地音视频设备成功"))
+                    .catch(() => log("打开本地音视频设备失败"));
             }
 
             break;
@@ -121,10 +130,10 @@ const handleMessage = (event) => {
                 roomList.removeChild(node);
             });*/
             //当div下还存在子节点时 循环继续
-            while(roomList.hasChildNodes()) {
+            while (roomList.hasChildNodes()) {
                 roomList.removeChild(roomList.firstChild);
             }
-            JSON.parse(message.message).forEach((roomId) =>{
+            JSON.parse(message.message).forEach((roomId) => {
                 let item = document.createElement("div");
                 let label = document.createElement("label");
                 label.setAttribute("for", roomId);
@@ -133,71 +142,84 @@ const handleMessage = (event) => {
                 span.innerText = roomId;
                 let button = document.createElement("button");
                 button.innerText = "加入房间";
-                button.onclick = () => {
-                    enterRoom(roomId);
-                };
-                item.append(label,span,button);
+                button.onclick = () => websocket.send(JSON.stringify({
+                    command: TYPE_COMMAND_ROOM_ENTER,
+                    userId: userId,
+                    roomId: roomId
+                }));
+                item.append(label, span, button);
                 roomList.append(item);
             });
             break;
-        case TYPE_DIALOGUE:
-            let dialogue = document.createElement("p").innerText = message.userId+":"+message.message;
+        case TYPE_COMMAND_DIALOGUE:
+            let dialogue = document.createElement("p").innerText = message.userId + ":" + message.message;
             let br = document.createElement("br");
-            document.getElementById("dialogueList").append(dialogue,br);
+            document.getElementById("dialogueList").append(dialogue, br);
             break;
-        case TYPE_COMMAND_REMOTER_READY:
+        case TYPE_COMMAND_READY:
             if (caller) {
                 //初始化一个webrtc端点
-                rtcPeerConnection = new RTCPeerConnection();
+                rtcPeerConnection = new RTCPeerConnection(iceServers);
                 //添加事件监听函数
-                rtcPeerConnection.onicecandidate;
-                rtcPeerConnection.ontrack;
+                rtcPeerConnection.onicecandidate = onIceCandidate;
+                rtcPeerConnection.ontrack = onAddTrack;
 
-                rtcPeerConnection.addTrack(localStream);
+                rtcPeerConnection.addTrack(localMediaStream);
                 rtcPeerConnection.createOffer()
-                    .then()
-                    .catch((e)=>{
-                        log("createOffer,error:" + e);
-                    })
-
+                    .then(
+                        setLocalAndOffer
+                    )
+                    .catch(
+                        log("createOffer,error:")
+                    );
             }
+            break;
+        case TYPE_COMMAND_OFFER:
+            if (!caller) {
+                //初始化一个webrtc端点
+                rtcPeerConnection = new RTCPeerConnection(iceServers);
+                //添加事件监听函数
+                rtcPeerConnection.onicecandidate = onIceCandidate;
 
+                rtcPeerConnection.onaddtrack = onAddTrack;
+
+                rtcPeerConnection.addTrack(localMediaStream);
+                rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(message.message.sdp));
+                rtcPeerConnection.createAnswer()
+                    .then(
+                        setLocalAndAnswer
+                    )
+                    .catch(
+                        log("error")
+                    );
+            }
+            break;
+        case TYPE_COMMAND_ANSWER:
+            rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(event));
+            break;
+        case TYPE_COMMAND_CANDIDATE:
+            let candidate = new RTCIceCandidate({
+                sdpMLineIndex: message.message.label,
+                candidate: message.message.candidate
+            });
+            rtcPeerConnection.addIceCandidate(candidate);
+            break;
     }
 
+
 };
-//创建或者加入一个房间
-const enterRoom = (roomId) =>{
-    websocket.send(JSON.stringify({command:"enterRoom",userId:userId,roomId : roomId}));
-};
+
 //打开本地音视频,用promise这样在打开视频成功后，再进行下一步操作
-/*const openLocalMedia = () => {
-    navigator.mediaDevices.getUserMedia(mediaConstraints)
-        .then((mediaStream) => {
-            // make stream available to browser console(设置不设置都没问题)
-            window.stream = mediaStream;
-            //localVideo.srcObject = mediaStream;
-            localStream = stream;
-            let localVideo = document.getElementById("localVideo");
-            localVideo.srcObject = stream;
-            localVideo.play();
-
-        })
-        .catch((error) => {
-            log(error);
-        });
-};*/
-
-//打开本地音视频
 const openLocalMedia = () => {
     return new Promise((resolve, reject) => {
         navigator.mediaDevices.getUserMedia(mediaConstraints)
-            .then((mediaStream) => {
-                // make stream available to browser console(设置不设置都没问题)
-                window.stream = mediaStream;
+            .then((stream) => {
+                //make stream available to browser console(设置不设置都没问题)
+                //window.stream = mediaStream;
                 //localVideo.srcObject = mediaStream;
                 localStream = stream;
                 let localVideo = document.getElementById("localVideo");
-                localVideo.srcObject = stream;
+                localVideo.srcObject = localStream;
                 localVideo.play();
 
             })
@@ -205,5 +227,60 @@ const openLocalMedia = () => {
             .catch(() => reject());
     });
 
+};
+
+const onAddTrack = (event) =>{
+    remoteStream = event.stream;
+    let remoteVideo = document.getElementById("remoteVideo");
+    remoteVideo.srcObject = remoteStream;
+    remoteVideo.play();
+
+};
+
+const onIceCandidate = (event) =>{
+    if (event.icecandidate) {
+        log("sending ice candidate");
+        websocket.send(JSON.stringify({
+            command: TYPE_COMMAND_CANDIDATE,
+            userId: userId,
+            roomId: roomId,
+            message: {
+                label: event.candidate.sdpMLineIndex,
+                id: event.candidate.sdpMid,
+                candidate: event.candidate.candidate
+            }
+        }));
+
+    }
+};
+
+const setLocalAndOffer = (sessionDescription) => {
+    rtcPeerConnection.setLocalDescription(sessionDescription);
+    websocket.send(
+        JSON.stringify({
+            command: TYPE_COMMAND_OFFER,
+            userId: userId,
+            roomId: roomId,
+            message: {
+                sdp: sessionDescription,
+            }
+        })
+    );
+};
+
+
+
+const setLocalAndAnswer = (sessionDescription) => {
+    rtcPeerConnection.setLocalDescription(sessionDescription);
+    websocket.send(
+        JSON.stringify({
+            command: TYPE_COMMAND_ANSWER,
+            userId: userId,
+            roomId: roomId,
+            message: {
+                sdp: sessionDescription,
+            }
+        })
+    );
 };
 

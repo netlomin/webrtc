@@ -95,8 +95,6 @@ public class Connection {
     @OnError
     public void onError(Session session, Throwable error) {
         log.error("用户:" + ip + "连接错误");
-        //不用调用函数销毁对象，连接失败或者关闭该对象会自动销毁，由于放入set时，用的是this,指向同一个对象，set中的该对象也会自动销毁
-        //roomService.removeUserFromRoom(roomId, userId);
         error.printStackTrace();
     }
 
@@ -111,13 +109,13 @@ public class Connection {
             case Message.TYPE_COMMAND_ROOM_ENTER:
                 enterRoom(message);
                 break;
-            case Message.TYPE_DIALOGUE:
+            case Message.TYPE_COMMAND_DIALOGUE:
                 dialogueService.sendMessageForEvery(message);
                 break;
             case Message.TYPE_COMMAND_ROOM_LIST:
                 getRoomList(message);
                 break;
-            case Message.TYPE_COMMAND_REMOTER_READY:
+            case Message.TYPE_COMMAND_READY:
                 remoteReady();
         }
     }

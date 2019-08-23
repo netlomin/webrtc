@@ -77,9 +77,6 @@ public class RoomService {
                     room.remove(user);
                 }
             }
-            if (room.size() == 0) {
-                rooms.remove(roomId);
-            }
         }
 
     }
