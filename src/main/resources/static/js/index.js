@@ -162,7 +162,7 @@ const handleMessage = (event) => {
                 rtcPeerConnection = new RTCPeerConnection(iceServers);
                 //添加事件监听函数
                 rtcPeerConnection.onicecandidate = onIceCandidate;
-                rtcPeerConnection.ontrack = onAddTrack;
+                rtcPeerConnection.ontrack = onTrack;
 
                 rtcPeerConnection.addTrack(localMediaStream);
                 rtcPeerConnection.createOffer()
@@ -181,7 +181,7 @@ const handleMessage = (event) => {
                 //添加事件监听函数
                 rtcPeerConnection.onicecandidate = onIceCandidate;
 
-                rtcPeerConnection.onaddtrack = onAddTrack;
+                rtcPeerConnection.onatrack = onTrack;
 
                 rtcPeerConnection.addTrack(localMediaStream);
                 rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(message.message.sdp));
@@ -217,11 +217,10 @@ const openLocalMedia = () => {
                 //make stream available to browser console(设置不设置都没问题)
                 //window.stream = mediaStream;
                 //localVideo.srcObject = mediaStream;
-                localStream = stream;
+                localMediaStream = stream;
                 let localVideo = document.getElementById("localVideo");
-                localVideo.srcObject = localStream;
+                localVideo.srcObject = localMediaStream;
                 localVideo.play();
-
             })
             .then(() => resolve())
             .catch(() => reject());
@@ -229,10 +228,10 @@ const openLocalMedia = () => {
 
 };
 
-const onAddTrack = (event) =>{
-    remoteStream = event.stream;
+const onTrack = (event) =>{
+    remoteMediaStream = event.stream;
     let remoteVideo = document.getElementById("remoteVideo");
-    remoteVideo.srcObject = remoteStream;
+    remoteVideo.srcObject = remoteMediaStream;
     remoteVideo.play();
 
 };

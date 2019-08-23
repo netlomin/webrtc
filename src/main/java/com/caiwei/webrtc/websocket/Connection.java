@@ -116,7 +116,7 @@ public class Connection {
                 getRoomList(message);
                 break;
             case Message.TYPE_COMMAND_READY:
-                remoteReady();
+                dialogueService.sendMessageForEveryExcludeSelf(message);
         }
     }
 
@@ -141,8 +141,5 @@ public class Connection {
         }
     }
 
-    private void remoteReady() {
-
-    }
 
 }
