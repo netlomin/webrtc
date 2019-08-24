@@ -25,7 +25,6 @@ public class HttpsConfig {
         connector.setRedirectPort(8443);
         return connector;
     }
-
     @Bean
     public TomcatServletWebServerFactory tomcatServletWebServerFactory(Connector connector){
         TomcatServletWebServerFactory tomcat = new TomcatServletWebServerFactory() {

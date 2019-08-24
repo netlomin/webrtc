@@ -19,46 +19,46 @@ let iceServers={
 };
 const mediaConstraints = {
     video: {width: 500, height: 500},
-    audio: true
+    audio: false // true,//由于没有麦克风，所有如果请求音频，会报错，不过不会影响视频流播放
 };
 
-const streamConstraints = {
-    video: true,
-    audio: true
+
+const offerOptions = {
+    iceRestart: true,
+    offerToReceiveAudio: false, //true,由于没有麦克风，所有如果请求音频，会报错，不过不会影响视频流播放
+    offerToReceiveVideo: true
 };
 
 let localMediaStream;
-let remoteMediaStream;
 
 let rtcPeerConnection;
 
 
-//写在这里不行，得写到promise的then里面才起作用
+//写在这里不行，得写到promise的then里面才起作用，暂不知为何
 //const localVideo = document.getElementById("localVideo");
 //const remoteVideo = document.getElementById("remoteVideo");
 
 let websocket;
-let userId;
+let userId = randomName();
 let roomId;
 let caller = false;
 
 let log;
 
 window.onload = ()=>{
+    //初始化log
     log = (message) => {
-        let log = document.getElementById("log");
+        let log = document.getElementById("logContent");
         let oneLog = document.createElement("span");
         oneLog.innerText = message;
         let br  = document.createElement("br");
         log.append(oneLog,br);
     };
-    document.getElementById("sureUserId").onclick = () =>{
-        userId = document.getElementById("userId").value;
-        document.getElementById("showUserId").innerText = userId;
-        document.getElementById("firstInput").style.display="none";
-        document.getElementById("main").style.display="block";
-    };
 
+    //设定随机名称
+    document.getElementById("showUserId").innerText = userId;
+
+    //初始化websocket连接
     get("/getWebSocketUrl")
         .then((data) => {
             if (!websocket) {
@@ -81,17 +81,26 @@ window.onload = ()=>{
             log(error);
         });
 
+    //初始化各种按钮
     document.getElementById("enterRoom").onclick = () =>{
-        userId = document.getElementById("userId").value;
         roomId = document.getElementById("roomId").value;
         websocket.send(JSON.stringify({command:TYPE_COMMAND_ROOM_ENTER,userId:userId,roomId : roomId}));
-        websocket.send(JSON.stringify({command: TYPE_COMMAND_ROOM_LIST}));
+        //不用向服务器请求房间列表，在服务器的创建房间函数中，向每个终端发送TYPE_COMMAND_ROOM_LIST事件
+        //websocket.send(JSON.stringify({command: TYPE_COMMAND_ROOM_LIST}));
     };
 
     document.getElementById("sendMessage").onclick = () =>{
         let textMessage = document.getElementById("textMessage").value;
         websocket.send(JSON.stringify({command:TYPE_COMMAND_DIALOGUE,userId:userId,roomId : roomId, message: textMessage}));
     };
+
+    document.getElementById("clearLog").onclick = () =>{
+        let logContentDiv = document.getElementById("logContent");
+        while (logContentDiv.hasChildNodes()) {
+            logContentDiv.removeChild(logContentDiv.firstChild);
+        }
+    };
+
 
 
 
@@ -134,21 +143,24 @@ const handleMessage = (event) => {
                 roomList.removeChild(roomList.firstChild);
             }
             JSON.parse(message.message).forEach((roomId) => {
-                let item = document.createElement("div");
-                let label = document.createElement("label");
-                label.setAttribute("for", roomId);
-                label.innerText = "房间号：";
-                let span = document.createElement("span");
-                span.innerText = roomId;
-                let button = document.createElement("button");
-                button.innerText = "加入房间";
-                button.onclick = () => websocket.send(JSON.stringify({
-                    command: TYPE_COMMAND_ROOM_ENTER,
-                    userId: userId,
-                    roomId: roomId
-                }));
-                item.append(label, span, button);
-                roomList.append(item);
+                //大厅默认已经加入，不把大厅展示在房间列表
+                if( roomId !== "lobby"){
+                    let item = document.createElement("div");
+                    let label = document.createElement("label");
+                    label.setAttribute("for", roomId);
+                    label.innerText = "房间号：";
+                    let span = document.createElement("span");
+                    span.innerText = roomId;
+                    let button = document.createElement("button");
+                    button.innerText = "加入房间";
+                    button.onclick = () => websocket.send(JSON.stringify({
+                        command: TYPE_COMMAND_ROOM_ENTER,
+                        userId: userId,
+                        roomId: roomId
+                    }));
+                    item.append(label, span, button);
+                    roomList.append(item);
+                }
             });
             break;
         case TYPE_COMMAND_DIALOGUE:
@@ -164,13 +176,18 @@ const handleMessage = (event) => {
                 rtcPeerConnection.onicecandidate = onIceCandidate;
                 rtcPeerConnection.ontrack = onTrack;
 
-                rtcPeerConnection.addTrack(localMediaStream);
-                rtcPeerConnection.createOffer()
+                //addStream相关的方法，已过时
+                //rtcPeerConnection.addTrack(localMediaStream);
+                for( const track of localMediaStream.getTracks()){
+                    rtcPeerConnection.addTrack(track, localMediaStream);
+                }
+                rtcPeerConnection.createOffer(offerOptions)
                     .then(
                         setLocalAndOffer
                     )
-                    .catch(
-                        log("createOffer,error:")
+                    .catch(() => {
+                            log("setLocalAndOffer error:")
+                        }
                     );
             }
             break;
@@ -181,28 +198,57 @@ const handleMessage = (event) => {
                 //添加事件监听函数
                 rtcPeerConnection.onicecandidate = onIceCandidate;
 
-                rtcPeerConnection.onatrack = onTrack;
+                rtcPeerConnection.ontrack = onTrack;
 
-                rtcPeerConnection.addTrack(localMediaStream);
-                rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(message.message.sdp));
-                rtcPeerConnection.createAnswer()
+                //rtcPeerConnection.addTrack(localMediaStream);
+                for (const track of localMediaStream.getTracks()) {
+                    rtcPeerConnection.addTrack(track, localMediaStream);
+                }
+                //原因：后端接口返回的数据换行采用了\r\n方式，使得json文本无法解析带换行符的内容
+                //解决方法：将Json字符串中所有的\r\n转成\\r\\n
+                let sdpMessage = message.message;
+                sdpMessage.replace(/[\r]/g, "\\r").replace(/[\n]/g, "\\n");
+                console.log(sdpMessage);
+                let sdp = JSON.parse(sdpMessage).sdp;
+                rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(sdp))
+                    .then(
+                        log("setRemoteDescription 完毕")
+                    );
+                rtcPeerConnection.createAnswer(offerOptions)
                     .then(
                         setLocalAndAnswer
                     )
-                    .catch(
-                        log("error")
+                    .catch(() => {
+                            log("setLocalAndAnswer error");
+                        }
                     );
             }
             break;
         case TYPE_COMMAND_ANSWER:
-            rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(event));
+            //原因：后端接口返回的数据换行采用了\r\n方式，使得json文本无法解析带换行符的内容
+            //解决方法：将Json字符串中所有的\r\n转成\\r\\n
+            let sdpMessage = message.message;
+            sdpMessage.replace(/[\r]/g, "\\r").replace(/[\n]/g, "\\n");
+            console.log(sdpMessage);
+            let sdp = JSON.parse(sdpMessage).sdp;
+            rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(sdp))
+                .then(
+                    log("setRemoteDescription 完毕")
+                );
             break;
         case TYPE_COMMAND_CANDIDATE:
-            let candidate = new RTCIceCandidate({
-                sdpMLineIndex: message.message.label,
-                candidate: message.message.candidate
+            let candidateMessage = message.message;
+            console.log(candidateMessage);
+            let candidate = JSON.parse(candidateMessage).candidate;
+            let rtcIceCandidate = new RTCIceCandidate({
+                sdpMid: candidate.sdpMid,
+                sdpMLineIndex: candidate.label,
+                candidate: candidate.candidate
             });
-            rtcPeerConnection.addIceCandidate(candidate);
+            rtcPeerConnection.addIceCandidate(rtcIceCandidate)
+                .then(
+                    log("addIceCandidate 完毕")
+                    );
             break;
     }
 
@@ -229,7 +275,7 @@ const openLocalMedia = () => {
 };
 
 const onTrack = (event) =>{
-    remoteMediaStream = event.stream;
+    let remoteMediaStream = event.streams[0];
     let remoteVideo = document.getElementById("remoteVideo");
     remoteVideo.srcObject = remoteMediaStream;
     remoteVideo.play();
@@ -237,16 +283,18 @@ const onTrack = (event) =>{
 };
 
 const onIceCandidate = (event) =>{
-    if (event.icecandidate) {
+    if (event.candidate) {
         log("sending ice candidate");
         websocket.send(JSON.stringify({
             command: TYPE_COMMAND_CANDIDATE,
             userId: userId,
             roomId: roomId,
             message: {
-                label: event.candidate.sdpMLineIndex,
-                id: event.candidate.sdpMid,
-                candidate: event.candidate.candidate
+                candidate:{
+                    sdpMid: event.candidate.sdpMid,
+                    sdpMLineIndex: event.candidate.sdpMLineIndex,
+                    candidate: event.candidate.candidate
+                }
             }
         }));
 
@@ -254,7 +302,10 @@ const onIceCandidate = (event) =>{
 };
 
 const setLocalAndOffer = (sessionDescription) => {
-    rtcPeerConnection.setLocalDescription(sessionDescription);
+    rtcPeerConnection.setLocalDescription(sessionDescription)
+        .then(
+            log("setLocalDescription 完毕")
+        );
     websocket.send(
         JSON.stringify({
             command: TYPE_COMMAND_OFFER,
@@ -270,7 +321,10 @@ const setLocalAndOffer = (sessionDescription) => {
 
 
 const setLocalAndAnswer = (sessionDescription) => {
-    rtcPeerConnection.setLocalDescription(sessionDescription);
+    rtcPeerConnection.setLocalDescription(sessionDescription)
+        .then(
+            log("setLocalDescription 完毕")
+        );
     websocket.send(
         JSON.stringify({
             command: TYPE_COMMAND_ANSWER,

@@ -71,3 +71,28 @@ const restDelete=(url, data)=> {
             .catch(err => reject(err))
     });
 };
+
+//生成随机名字
+const namePool = [
+    "去", "年", "元", "夜", "时",
+    "花", "市", "灯", "如", "昼",
+    "月", "上", "柳", "梢", "头",
+    "人", "约", "黄", "昏", "后",
+    "今", "年", "元", "夜", "时",
+    "花", "与", "灯", "依", "旧",
+    "不", "见", "去", "年", "人",
+    "泪", "满", "春", "衫", "袖"
+];
+
+const randomName = () => {
+
+    let randomName = "";
+    for (let i = 0; i < 3; i++) {
+        //获取随机数
+        let rand = Math.floor(Math.random() * namePool.length);
+        // 随机从数组中取出某值
+        let randomElement = namePool[rand];
+        randomName += randomElement;
+    }
+    return randomName;
+};

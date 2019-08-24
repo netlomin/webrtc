@@ -3,6 +3,7 @@ package com.caiwei.webrtc.service;
 import com.caiwei.webrtc.websocket.Connection;
 import org.springframework.stereotype.Service;
 
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -22,19 +23,51 @@ public class RoomService {
 
 
     /**
+     * 加入到大厅
+     */
+    public void enterLobby(Connection connection) {
+        Set<Connection> lobby =rooms.get("lobby");
+        if(lobby == null){
+            rooms.put("lobby", new HashSet<>());
+            lobby =rooms.get("lobby");
+            lobby.add(connection);
+        }else {
+            lobby.add(connection);
+        }
+    }
+
+    /**
+     * 离开大厅
+     */
+    public void leaveLobby(Connection connection) {
+        System.out.println(connection);
+        Set<Connection> lobby =rooms.get("lobby");
+        for (Connection connection1 : lobby) {
+            System.out.println(connection1);
+
+        }
+            boolean b = lobby.remove(connection);
+    }
+
+    /**
      * 加入指定的房间
      */
     public String enterRoom(String roomId, Connection connection) {
+
+        String operate;
         Set<Connection> room =rooms.get(roomId);
         if(room == null){
             rooms.put(roomId, new HashSet<>());
             room =rooms.get(roomId);
             room.add(connection);
-            return "created";
+            operate = "created";
         }else {
             room.add(connection);
-            return "joined";
+            operate = "joined";
         }
+        //离开大厅
+        leaveLobby(connection);
+        return operate;
     }
 
     /**
@@ -94,6 +127,13 @@ public class RoomService {
      */
     public Set<String> queryAllRoomName(){
         return rooms.keySet();
+    }
+
+    /**
+     * 查询所有存在的房间
+     */
+    public Collection<Set<Connection>> queryAllRoom(){
+        return rooms.values();
     }
 
 }

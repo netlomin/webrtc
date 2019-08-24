@@ -10,6 +10,9 @@ import com.caiwei.webrtc.service.ForwardMessageService;
 
 import com.caiwei.webrtc.service.RoomService;
 import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -30,7 +33,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 @ServerEndpoint(value = "/websocket",configurator = ConfiguratorForClientIp.class)
 @Component
 @Slf4j
-@Data
+//@Data 由于@Data重写了hashCode()和equals()方法，会导致Set<Connection> remove元素时，找不到正确的元素，应用@Setter @Getter @ToString替换
+@Getter
+@Setter
+@ToString
 public class Connection {
 
     //在线总人数
@@ -43,10 +49,10 @@ public class Connection {
     }
 
 
-    private static ForwardMessageService dialogueService;
+    private static ForwardMessageService forwardMessageService;
     @Autowired
-    public void setDialogueService(ForwardMessageService dialogueService) {
-        Connection.dialogueService = dialogueService;
+    public void setDialogueService(ForwardMessageService forwardMessageService) {
+        Connection.forwardMessageService = forwardMessageService;
     }
 
 
@@ -76,6 +82,8 @@ public class Connection {
     public void onOpen(Session session) {
         this.session = session;
         ip = (String) session.getUserProperties().get("clientIp");
+        //未进任何房间时，将本次连接放到大厅里面
+        roomService.enterLobby(this);
         log.info("用户:"+ip+"连接到服务器,当前在线人数为" + onlineCount.incrementAndGet());
     }
     /**
@@ -83,6 +91,8 @@ public class Connection {
      */
     @OnClose
     public void onClose(Session session) {
+        //离开大厅
+        roomService.leaveLobby(this);
         //即使连接错误，回调了onError方法，最终也会回调onClose方法，所有退出房间写在这里比较合适
         roomService.leaveRoom(roomId, this);
         //在线数减1
@@ -107,31 +117,39 @@ public class Connection {
         log.info("收到来自"+ip+"的信息:"+message);
         switch (message.getCommand()) {
             case Message.TYPE_COMMAND_ROOM_ENTER:
+                this.userId = message.getUserId();
+                this.roomId = message.getRoomId();
                 enterRoom(message);
+                //服务器主动向所有在线的人推送房间列表
+                pushRoomList();
                 break;
             case Message.TYPE_COMMAND_DIALOGUE:
-                dialogueService.sendMessageForEvery(message);
+                forwardMessageService.sendMessageForEveryInRoom(message);
                 break;
             case Message.TYPE_COMMAND_ROOM_LIST:
-                getRoomList(message);
+                //前端从服务器拉取房间列表
+                pullRoomList(message);
                 break;
             case Message.TYPE_COMMAND_READY:
-                dialogueService.sendMessageForEveryExcludeSelf(message);
+            case Message.TYPE_COMMAND_OFFER:
+            case Message.TYPE_COMMAND_ANSWER:
+            case Message.TYPE_COMMAND_CANDIDATE:
+                forwardMessageService.sendMessageForEveryExcludeSelfInRoom(message);
+                break;
         }
     }
 
-    private void enterRoom(Message message) {
-        this.userId = message.getUserId();
-        this.roomId = message.getRoomId();
+    private void  enterRoom(Message message) {
         message.setMessage(roomService.enterRoom(roomId, this));
         try {
+            //返回给自己是加入房间还是创建房间
             session.getBasicRemote().sendText(JSON.toJSONString(message));
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    private void getRoomList(Message message) {
+    private void pullRoomList(Message message) {
         message.setMessage(JSON.toJSONString(roomService.queryAllRoomName(),SerializerFeature.WriteNullListAsEmpty));
         try {
             session.getBasicRemote().sendText(JSON.toJSONString(message));
@@ -141,5 +159,11 @@ public class Connection {
         }
     }
 
-
+    private void pushRoomList() {
+        //告诉每个终端更新房间列表
+        Message roomListMessage = new Message();
+        roomListMessage.setCommand(Message.TYPE_COMMAND_ROOM_LIST);
+        roomListMessage.setMessage(JSON.toJSONString(roomService.queryAllRoomName(),SerializerFeature.WriteNullListAsEmpty));
+        forwardMessageService.sendMessageForAllOnline(roomListMessage);
+    }
 }

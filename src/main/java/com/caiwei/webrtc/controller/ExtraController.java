@@ -71,7 +71,6 @@ public class ExtraController {
         return result;
     }
 
-
     @GetMapping("/queryCountInRoom")
     public Map<String, String> queryCountInRoom(String roomId) {
         Map<String, String> result = new HashMap<>();
