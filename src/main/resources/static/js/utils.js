@@ -72,7 +72,7 @@ const restDelete=(url, data)=> {
     });
 };
 
-//生成随机名字
+
 const namePool = [
     "去", "年", "元", "夜", "时",
     "花", "市", "灯", "如", "昼",
@@ -83,7 +83,7 @@ const namePool = [
     "不", "见", "去", "年", "人",
     "泪", "满", "春", "衫", "袖"
 ];
-
+//生成随机名字
 const randomName = () => {
 
     let randomName = "";
