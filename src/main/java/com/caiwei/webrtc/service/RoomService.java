@@ -5,10 +5,10 @@ import org.springframework.stereotype.Service;
 
 import java.util.Collection;
 import java.util.HashSet;
-import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+
 
 /**
  * @ClassName: RoomService
@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentMap;
 @Service
 public class RoomService {
 
-    private ConcurrentMap<String,Set<Connection>> rooms = new ConcurrentHashMap<>();
+    private Map<String,Set<Connection>> rooms = new ConcurrentHashMap<>();
 
 
     /**
@@ -42,11 +42,7 @@ public class RoomService {
     public void leaveLobby(Connection connection) {
         System.out.println(connection);
         Set<Connection> lobby =rooms.get("lobby");
-        for (Connection connection1 : lobby) {
-            System.out.println(connection1);
-
-        }
-            boolean b = lobby.remove(connection);
+        lobby.remove(connection);
     }
 
     /**
